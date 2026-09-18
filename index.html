@@ -121,15 +121,15 @@
                     teamNames = data.teamNames || teamNames;
                     currentRound = data.currentRound || 1;
                     scoreData = data.scoreData || scoreData;
-                    return true; // 저장된 데이터가 있음
+                    return true;
                 } catch (e) {
                     console.error("데이터 로드 실패", e);
                 }
             }
-            return false; // 저장된 데이터 없음
+            return false;
         }
 
-        // 전체 게임 초기화 (설정 창으로 이동)
+        // 전체 게임 초기화
         function resetGame() {
             if (confirm("모든 점수와 설정이 삭제됩니다. 처음부터 다시 시작하시겠습니까?")) {
                 localStorage.removeItem('quizGameState');
@@ -137,15 +137,13 @@
             }
         }
 
-        // [1] 앱 시작 진입점
+        // 앱 시작 진입점
         function initApp() {
             if (loadData()) {
-                // 저장된 데이터가 있으면 바로 게임 화면으로 이동
                 setupPage.classList.add('hidden');
                 gamePage.classList.remove('hidden');
                 initGame();
             } else {
-                // 데이터가 없으면 설정 화면 출력
                 setupPage.classList.remove('hidden');
                 gamePage.classList.add('hidden');
                 initSetup();
@@ -167,7 +165,7 @@
             }
         }
 
-        // 게임 시작 (이름 저장 및 화면 전환)
+        // 게임 시작
         function startGame() {
             for (let i = 0; i < NUM_TEAMS; i++) {
                 const inputVal = document.getElementById(`team-input-${i}`).value.trim();
@@ -175,12 +173,9 @@
                     teamNames[i] = inputVal;
                 }
             }
-            
-            saveData(); // 데이터 저장
-            
+            saveData();
             setupPage.classList.add('hidden');
             gamePage.classList.remove('hidden');
-            
             initGame();
         }
 
@@ -209,8 +204,16 @@
             teamsGrid.innerHTML = '';
             for (let i = 1; i <= NUM_TEAMS; i++) {
                 const totalScore = calculateTotalScore(i);
-                const currentRoundScore = scoreData[currentRound][i];
                 const teamName = teamNames[i-1];
+                
+                let currentDisplayScore = scoreData[currentRound][i];
+                let roundText = roundNames[currentRound-1];
+
+                // [요구사항 반영] 4라운드와 5라운드는 현재 점수를 서로 합산하여 표시
+                if (currentRound === 4 || currentRound === 5) {
+                    currentDisplayScore = scoreData[4][i] + scoreData[5][i];
+                    roundText = '4R+5R 합산';
+                }
 
                 const card = document.createElement('div');
                 card.className = "bg-white rounded-xl shadow border-2 border-gray-200 flex flex-col justify-between p-2";
@@ -219,8 +222,8 @@
                         <div class="text-center font-black text-gray-800 text-base mb-0.5 truncate">${teamName}</div>
                         <div class="text-center text-[10px] font-semibold text-gray-400">누적 총점</div>
                         <div class="text-center text-4xl font-black text-blue-700 mb-1 leading-none tracking-tighter">${totalScore}</div>
-                        <div class="text-center text-xs font-bold ${currentRoundScore > 0 ? 'text-green-600' : 'text-gray-500'} bg-gray-50 py-0.5 rounded">
-                            ${roundNames[currentRound-1]}: <span class="text-sm">${currentRoundScore}</span>
+                        <div class="text-center text-xs font-bold ${currentDisplayScore > 0 ? 'text-green-600' : 'text-gray-500'} bg-gray-50 py-0.5 rounded">
+                            ${roundText}: <span class="text-sm">${currentDisplayScore}</span>
                         </div>
                     </div>
                     <div>
@@ -240,16 +243,32 @@
 
         function setRound(round) {
             currentRound = round;
-            saveData(); // 상태 변경 시 저장
+            saveData();
             renderTabs();
             renderTeams();
             updateActionState();
         }
 
         function addScore(team, amount) {
-            scoreData[currentRound][team] += amount;
-            if (scoreData[currentRound][team] < 0) scoreData[currentRound][team] = 0;
-            saveData(); // 점수 변경 시 저장
+            // [요구사항 반영] 4, 5라운드는 점수를 공유하므로 감점 시 연동 처리
+            if (currentRound === 4 || currentRound === 5) {
+                scoreData[currentRound][team] += amount;
+                
+                // 음수가 될 경우 다른 라운드(4R<->5R)에서 차감하여 논리적 오류 방지
+                if (scoreData[currentRound][team] < 0) {
+                    let remainder = scoreData[currentRound][team];
+                    scoreData[currentRound][team] = 0;
+                    
+                    let otherRound = (currentRound === 4) ? 5 : 4;
+                    scoreData[otherRound][team] += remainder;
+                    if (scoreData[otherRound][team] < 0) scoreData[otherRound][team] = 0;
+                }
+            } else {
+                scoreData[currentRound][team] += amount;
+                if (scoreData[currentRound][team] < 0) scoreData[currentRound][team] = 0;
+            }
+            
+            saveData();
             renderTeams();
         }
 
@@ -264,17 +283,17 @@
         function updateActionState() {
             actionBtn.className = "w-full h-full text-base font-black rounded-lg shadow-sm transition-colors duration-200"; 
             
-            // 1~5라운드 모두 벌칙 확인 버튼 노출 (2, 4라운드 포함)
-            if (currentRound >= 1 && currentRound <= 5) {
+            // [요구사항 반영] 4라운드는 벌칙이 없으므로 버튼을 숨깁니다.
+            if (currentRound === 1 || currentRound === 2 || currentRound === 3 || currentRound === 5) {
                 actionBtn.classList.remove('hidden');
                 actionBtn.classList.add('bg-red-500', 'text-white', 'active:bg-red-600', 'animate-pulse');
-                actionBtn.innerText = `🚨 ${currentRound}R(${roundNames[currentRound-1]}) 벌칙 팀 확인`;
+                actionBtn.innerText = `🚨 ${currentRound}R 벌칙 팀 확인`;
             } else if (currentRound === 6) {
                 actionBtn.classList.remove('hidden');
                 actionBtn.classList.add('bg-yellow-400', 'text-yellow-900', 'active:bg-yellow-500');
                 actionBtn.innerText = `🏆 최종 우승 결과 보기`;
             } else {
-                actionBtn.classList.add('hidden');
+                actionBtn.classList.add('hidden'); // 4라운드는 버튼 없음
             }
         }
 
@@ -284,7 +303,7 @@
                 totals.push({ teamIndex: i, name: teamNames[i-1], score: calculateTotalScore(i) });
             }
 
-            if (currentRound >= 1 && currentRound <= 5) {
+            if (currentRound === 1 || currentRound === 2 || currentRound === 3 || currentRound === 5) {
                 const minScore = Math.min(...totals.map(t => t.score));
                 const penaltyTeams = totals.filter(t => t.score === minScore).map(t => t.name);
                 
